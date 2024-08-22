@@ -4,6 +4,9 @@ import pytesseract
 import ctypes
 import threading
 import time
+import cv2
+import numpy as np
+from PIL import Image
 
 # Nastaviť aplikáciu ako DPI Aware
 ctypes.windll.user32.SetProcessDPIAware()
@@ -13,16 +16,21 @@ start_value = None
 end_value = None
 button_value = None
 
+# Premenné na uchovanie posledných zadaných hodnôt
+last_start_value = None
+last_end_value = None
+last_button_value = None
+
 def start_action():
-    open_input_window("FAST", set_start_value)
+    open_input_window("FAST", set_start_value, last_start_value)
 
 def end_action():
-    open_input_window("MEDIUM", set_end_value)
+    open_input_window("MEDIUM", set_end_value, last_end_value)
 
 def button_action():
-    open_input_window("SLOW", set_button_value)
+    open_input_window("SLOW", set_button_value, last_button_value)
 
-def open_input_window(title, callback):
+def open_input_window(title, callback, last_value):
     input_window = tk.Toplevel(root)
     input_window.title(title)
     input_window.geometry("300x150")
@@ -33,10 +41,24 @@ def open_input_window(title, callback):
     entry = tk.Entry(input_window)
     entry.pack(pady=10)
     
+    # Ak existuje posledná hodnota, predvyplníme ňou textové pole
+    if last_value is not None:
+        entry.insert(0, str(last_value))
+    
     def ok_action():
         try:
             value = int(entry.get())  # Získať hodnotu z textového poľa a konvertovať na celé číslo
             callback(value)  # Zavolať príslušný callback na uloženie hodnoty
+            
+            # Uložíme poslednú zadanú hodnotu
+            global last_start_value, last_end_value, last_button_value
+            if title == "FAST":
+                last_start_value = value
+            elif title == "MEDIUM":
+                last_end_value = value
+            elif title == "SLOW":
+                last_button_value = value
+                
             print(f"Zadaná hodnota pre {title}:", value)  # Vypíše zadanú hodnotu do konzoly
             
             input_window.destroy()  # Zavrieť okno po stlačení OK
@@ -61,7 +83,6 @@ def set_button_value(value):
     button_value = value
 
 def start_monitoring_gui():
-    # Druhá časť kódu pre snímanie obrazovky a OCR
     monitoring_window = tk.Toplevel(root)
     monitoring_window.attributes('-fullscreen', True)  # Celá obrazovka
     monitoring_window.attributes('-alpha', 0.3)  # Mierne transparentné okno
@@ -92,30 +113,29 @@ def start_monitoring_gui():
     def monitor_area():
         while True:
             screenshot = ImageGrab.grab(bbox)
-            # Predspracovanie obrázka
-            screenshot = screenshot.convert('L')
-            enhancer = ImageEnhance.Contrast(screenshot)
-            screenshot = enhancer.enhance(3.0)
-            screenshot = screenshot.filter(ImageFilter.SHARPEN)
-            screenshot = screenshot.point(lambda p: p > 128 and 255)
-            screenshot = ImageOps.invert(screenshot)
-
-            text = pytesseract.image_to_string(screenshot, config='--psm 6 outputbase digits').strip()
+            screenshot_np = np.array(screenshot)
+            gray = cv2.cvtColor(screenshot_np, cv2.COLOR_BGR2GRAY)
+            adaptive_thresh = cv2.adaptiveThreshold(
+                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                cv2.THRESH_BINARY_INV, 11, 2
+            )
+            processed_image = Image.fromarray(adaptive_thresh)
+            text = pytesseract.image_to_string(processed_image, config='--psm 6 outputbase digits').strip()
             print("Detected numbers:", text)
             
             if text.isdigit():
                 number = int(text)
                 update_button_colors(number)
 
-            time.sleep(0.1)  # Časový interval medzi snímkami
+            time.sleep(0.1)
 
     def update_button_colors(number):
-        # Reset colors
-        start_button.config(bg="SystemButtonFace")
-        end_button.config(bg="SystemButtonFace")
-        generic_button.config(bg="SystemButtonFace")
+        # Reset colors to black
+        start_button.config(bg="black")
+        end_button.config(bg="black")
+        generic_button.config(bg="black")
         
-        # Check ranges and update button colors
+        # Check ranges and update button colors to red
         if start_value is not None and number <= start_value:
             start_button.config(bg="red")
         elif end_value is not None and start_value < number <= end_value:
@@ -131,16 +151,16 @@ root = tk.Tk()
 root.title("Simple GUI")
 root.geometry("400x300")
 
-# Vytvorenie tlačidiel
-start_button = tk.Button(root, text="FAST", command=start_action)
-end_button = tk.Button(root, text="MEDIUM", command=end_action)
-generic_button = tk.Button(root, text="SLOW", command=button_action)
-monitoring_button = tk.Button(root, text="Start Monitoring", command=start_monitoring_gui)  # Pridané tlačidlo pre monitorovanie
+# Vytvorenie tlačidiel s počiatočnou farbou čiernou
+start_button = tk.Button(root, text="FAST", command=start_action, bg="black", fg="white")
+end_button = tk.Button(root, text="MEDIUM", command=end_action, bg="black", fg="white")
+generic_button = tk.Button(root, text="SLOW", command=button_action, bg="black", fg="white")
+monitoring_button = tk.Button(root, text="Start Monitoring", command=start_monitoring_gui, bg="black", fg="white")
 
 # Umiestnenie tlačidiel pod sebou
 start_button.pack(pady=10)
 end_button.pack(pady=10)
 generic_button.pack(pady=10)
-monitoring_button.pack(pady=10)  # Umiestniť nové tlačidlo na spustenie monitorovania
+monitoring_button.pack(pady=10)
 
 root.mainloop()
