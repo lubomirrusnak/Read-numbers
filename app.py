@@ -114,11 +114,23 @@ def start_monitoring_gui():
         while True:
             screenshot = ImageGrab.grab(bbox)
             screenshot_np = np.array(screenshot)
+
+            # Konvertovanie na škálu sivej
             gray = cv2.cvtColor(screenshot_np, cv2.COLOR_BGR2GRAY)
+            
+            # Zvýšenie kontrastu
+            contrast_enhancer = ImageEnhance.Contrast(Image.fromarray(gray))
+            gray_contrast = np.array(contrast_enhancer.enhance(2))
+            
+            # Invertovanie farieb
+            gray_inverted = cv2.bitwise_not(gray_contrast)
+            
+            # Adaptívne prahovanie
             adaptive_thresh = cv2.adaptiveThreshold(
-                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                cv2.THRESH_BINARY_INV, 11, 2
+                gray_inverted, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                cv2.THRESH_BINARY, 11, 2
             )
+            
             processed_image = Image.fromarray(adaptive_thresh)
             text = pytesseract.image_to_string(processed_image, config='--psm 6 outputbase digits').strip()
             print("Detected numbers:", text)
@@ -127,7 +139,8 @@ def start_monitoring_gui():
                 number = int(text)
                 update_button_colors(number)
 
-            time.sleep(0.1)
+            time.sleep(0.7)
+
 
     def update_button_colors(number):
         # Reset colors to black
